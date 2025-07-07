@@ -1,60 +1,55 @@
-import { scrapePrices } from "../scrapper";
-import { getJson } from "serpapi";
 
-// Mock the serpapi module
-jest.mock("serpapi", () => ({
-    getJson: jest.fn()
-}));
+import request from "supertest";
+import express from "express";
+import { router } from "../routes";
+import * as scrMod from "../scrapper";
 
-describe("scrapePrices", () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
-    });
+const mockScrape = jest.spyOn(scrMod, "scrapePrices");
 
-    it("returns mapped shopping results", async () => {
-        (getJson as jest.Mock).mockImplementation((_opts: any, cb: any) =>
-            cb({
-                shopping_results: [
-                    {
-                        title: "Mock Phone",
-                        extracted_price: 999,
-                        currency: "USD",
-                        link: "https://example.com"
-                    }
-                ]
-            })
-        );
+const app = express();
+app.use(express.json());
+app.use("/", router);
 
-        const items = await scrapePrices(
-            "mock phone",
-            "United States",
-            1,
-            "FAKE_KEY"
-        );
+afterEach(() => mockScrape.mockReset());
 
-        expect(items).toEqual([
+describe("POST /scrape", () => {
+    it("returns 200 + results JSON", async () => {
+        mockScrape.mockResolvedValueOnce([
             {
-                productName: "Mock Phone",
-                price: 999,
+                productName: "Mock Bean",
+                price: 7.99,
                 currency: "USD",
-                link: "https://example.com"
+                product_link: "https://example.com/bean"
             }
         ]);
-    });
 
-    it("throws an error if API returns an error", async () => {
-        (getJson as jest.Mock).mockImplementation((_opts: any, cb: any) =>
-            cb({ error: "API limit exceeded" })
+        const res = await request(app)
+            .post("/scrape")
+            .send({ query: "coffee bean", country: "United States" })
+            .expect(200);
+
+        expect(res.body.results).toHaveLength(1);
+        expect(mockScrape).toHaveBeenCalledWith(
+            "coffee bean",
+            "United States",
+            1,
+            process.env.SERP_API_KEY
         );
-
-        await expect(
-            scrapePrices("test", "US", 1, "FAKE_KEY")
-        ).rejects.toThrow("Failed to scrape prices: API limit exceeded");
     });
 
-    it("throws an error if required params are missing", async () => {
-        await expect(
-            scrapePrices("", "", 1, "")
-        ).rejects.toThrow("Missing required parameters: query, country, or api_key.");
+    it("400 when query missing", async () => {
+        await request(app).post("/scrape").send({}).expect(400);
+        expect(mockScrape).not.toHaveBeenCalled();
+    });
+
+    it("500 when scraper throws", async () => {
+        mockScrape.mockRejectedValueOnce(new Error("boom"));
+
+        const res = await request(app)
+            .post("/scrape")
+            .send({ query: "fail", country: "US" })
+            .expect(500);
+
+        expect(res.body.error).toMatch(/boom/);
     });
 });

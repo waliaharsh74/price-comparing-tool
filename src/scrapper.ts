@@ -4,7 +4,7 @@ export interface PriceItem {
     productName: string;
     price: number | null;
     currency: string | null;
-    link: string;
+    product_link: string;
 }
 
 export async function scrapePrices(
@@ -12,34 +12,30 @@ export async function scrapePrices(
     country: string,
     pages: number = 1,
     api_key: string
-): Promise<PriceItem[]> {
+) {
     if (!query || !country || !api_key) {
         throw new Error("Missing required parameters: query, country, or api_key.");
     }
 
     try {
-        const response: any = await new Promise((resolve, reject) => {
-            getJson(
-                {
-                    engine: "google_shopping",
-                    api_key,
-                    q: query,
-                    location: country,
-                    num: pages * 100,
-                    sort_by: "price_ascending"
-                },
-                (data: any) => {
-                    if (data?.error) return reject(data.error);
-                    resolve(data);
-                }
-            );
+        const response = await getJson({
+
+            engine: "google_shopping",
+            api_key,
+            q: query,
+            location: country,
+            num: pages * 100,
+            sort_by: "price_ascending"
         });
+
+        console.log(response);
+
 
         const results: PriceItem[] = (response.shopping_results ?? []).map((p: any) => ({
             productName: p.title ?? "Unknown Product",
             price: p.extracted_price ?? null,
             currency: p.currency ?? null,
-            link: p.link ?? "#"
+            product_link: p.product_link ?? "#"
         }));
 
         return results;
